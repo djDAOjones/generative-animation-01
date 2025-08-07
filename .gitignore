@@ -1,0 +1,10 @@
+# Ignore model weights and large files
+stable-diffusion-v1-5/
+*.pt
+*.safetensors
+*.png
+*.jpg
+*.jpeg
+__pycache__/
+.venv/
+.DS_Store
