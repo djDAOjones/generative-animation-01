@@ -1,28 +1,35 @@
-from diffusers import DiffusionPipeline, UniPCMultistepScheduler
+from diffusers import StableDiffusionXLPipeline, UniPCMultistepScheduler
 import torch
+import os
 
-# Load the Stable Diffusion pipeline
-pipeline = DiffusionPipeline.from_pretrained("stable-diffusion-v1-5/stable-diffusion-v1-5", use_safetensors=True)
+# Load the SDXL base model
+pipe = StableDiffusionXLPipeline.from_pretrained("stabilityai/stable-diffusion-xl-base-1.0")
 
-# Move to the best available device (MPS for Apple Silicon, CUDA, then CPU)
+# Apply the LoRA weights (update path if needed)
+lora_path = "pixel-art-xl.safetensors"  # LoRA file in script directory
+pipe.load_lora_weights(lora_path)
+pipe.fuse_lora()
+
+# Move to best available device
 if torch.backends.mps.is_available():
-    device = "mps"
-    print("Using Apple Silicon GPU (MPS backend)")
+    pipe.to("mps")
 elif torch.cuda.is_available():
-    device = "cuda"
-    print("Using CUDA GPU")
+    pipe.to("cuda")
 else:
-    device = "cpu"
-    print("No GPU available, running on CPU. This will be much slower.")
-pipeline.to(device)
+    pipe.to("cpu")
 
-# Swap the scheduler to UniPCMultistepScheduler
-pipeline.scheduler = UniPCMultistepScheduler.from_config(pipeline.scheduler.config)
+# Optional: swap scheduler for potentially better results
+pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
 
-# Generate an image from a text prompt using the new scheduler
-prompt = "An image of a squirrel in Picasso style"
-image = pipeline(prompt).images[0]
+# Ensure exports folder exists
+os.makedirs("exports", exist_ok=True)
+
+# Generate an image from a text prompt
+prompt = (
+    "pixel art orange cat icon, bold, centered, simple, no background, game sprite, 8-bit, close-up, minimalist"
+)
+image = pipe(prompt, height=1024, width=1024).images[0]
 
 # Save the image
-image.save("image_of_squirrel_unipc.png")
-print("Image saved as image_of_squirrel_unipc.png")
+image.save("exports/orange_cat_icon_bold_1024.png")
+print("Image saved as exports/orange_cat_icon_bold_1024.png")
