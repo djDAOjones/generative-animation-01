@@ -50,16 +50,44 @@ def main():
     # Load and crop image
     img = Image.open(INPUT_IMAGE)
     img = crop_to_square(img)
+    # Save original (cropped) 1024x1024 image
+    img_1024 = img.resize((1024, 1024), resample=Image.LANCZOS)
+
     # Downsample to 64x64 (nearest neighbor for pixel art)
-    img = img.resize(TARGET_SIZE, resample=Image.NEAREST)
+    img_64 = img_1024.resize(TARGET_SIZE, resample=Image.NEAREST)
     # Load palette
     palette = load_palette(PALETTE_CSV)
     # Quantize
-    img_quant = quantize_to_palette(img, palette)
+    img_quant = quantize_to_palette(img_64, palette)
+    # Upscale quantized 64x64 to 1024x1024 (nearest for hard edges)
+    img_quant_up = img_quant.resize((1024, 1024), resample=Image.NEAREST)
     # Save
     os.makedirs(os.path.dirname(OUTPUT_IMAGE), exist_ok=True)
-    img_quant.save(OUTPUT_IMAGE)
-    print(f"Saved quantized 64x64 image to {OUTPUT_IMAGE}")
+    base_name = "orange_cat_icon_bold"
+    export_dir = os.path.dirname(OUTPUT_IMAGE)
+    root_dir = os.path.abspath(os.path.join(export_dir, ".."))
+    # Strict numbering with dummy file
+    last_file = None
+    last_num = 1
+    for f in os.listdir(root_dir):
+        if f.startswith("LAST_EXPORT_") and f[12:16].isdigit():
+            last_file = f
+            last_num = int(f[12:16])
+            break
+    num = last_num + 1
+    # Remove previous dummy file if exists
+    if last_file:
+        os.remove(os.path.join(root_dir, last_file))
+    # Create new dummy file with updated number
+    new_last_file = f"LAST_EXPORT_{num:04d}"
+    open(os.path.join(root_dir, new_last_file), "w").close()
+    out_path_64 = os.path.join(export_dir, f"{num:04d}_{base_name}_64x.png")
+    out_path_1024 = os.path.join(export_dir, f"{num:04d}_{base_name}_1024x.png")
+    img_1024.save(out_path_1024)
+    img_quant_up.save(out_path_64)
+    print(f"Saved original cropped 1024x1024 image to {out_path_1024}")
+    print(f"Saved quantized 64x64 (upscaled) image to {out_path_64}")
+    print(f"Updated strict numbering to {num:04d} (dummy file: {new_last_file})")
 
 if __name__ == "__main__":
     main()
