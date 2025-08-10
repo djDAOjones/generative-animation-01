@@ -1,6 +1,10 @@
 from diffusers import StableDiffusionXLPipeline, UniPCMultistepScheduler
 import torch
 import os
+import warnings
+
+# Suppress only LoRA key warnings
+warnings.filterwarnings("ignore", message=".*LoRA.*")
 
 # Load the SDXL base model
 pipe = StableDiffusionXLPipeline.from_pretrained("stabilityai/stable-diffusion-xl-base-1.0")
@@ -24,12 +28,13 @@ pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
 # Ensure exports folder exists
 os.makedirs("exports", exist_ok=True)
 
-# Generate an image from a text prompt
-prompt = (
-    "pixel art orange cat icon, bold, centered, simple, no background, game sprite, 8-bit, close-up, minimalist"
-)
-image = pipe(prompt, height=1024, width=1024).images[0]
+# Prompt the user for the main subject
+subject = input("Enter the subject for your pixel art (e.g. 'orange cat'): ").strip()
+pixel_keywords = "pixel art {} icon, bold, centered, simple, no background, game sprite, 8-bit, close-up, minimalist, 64x64 resolution".format(subject)
+full_prompt = pixel_keywords
+image = pipe(full_prompt, height=1024, width=1024).images[0]
 
 # Save the image
-image.save("exports/orange_cat_icon_bold_1024.png")
-print("Image saved as exports/orange_cat_icon_bold_1024.png")
+filename = f"exports/{subject.replace(' ', '_')}_icon_bold_1024.png"
+image.save(filename)
+print(f"Image saved as {filename}")
