@@ -1,0 +1,10 @@
+# Reproducible environment for pixel art generation
+# Pin versions for stability; update as needed for new features
+
+diffusers>=0.34.0
+transformers>=4.55.0
+peft>=0.17.0
+scikit-learn==1.7.1
+torch==2.3.0
+Pillow==10.3.0
+numpy==1.26.4
