@@ -96,19 +96,12 @@ def quantize_to_palette(img, palette):
 
 def main():
     # --- Get prompt and short description ---
-    prompt = input("Enter the full prompt for image generation:\n>").strip()
+    # NOTE: For testing, using default prompt and number of versions. Restore interactive input later.
+    prompt = "orange cat"
+    n_versions = 1
     desc = extract_keywords(prompt)
     print(f"Short description for filenames: {desc}")
-    # --- Ask for number of versions ---
-    while True:
-        try:
-            n_versions = int(input("How many versions/options? (1-5): ").strip())
-            if 1 <= n_versions <= 5:
-                break
-            else:
-                print("Please enter a number between 1 and 5.")
-        except ValueError:
-            print("Invalid input. Please enter a number between 1 and 5.")
+    # --- Prepare seeds and letters ---
     import random
     seeds = []
     for i in range(n_versions):
@@ -163,23 +156,29 @@ def main():
                 min_dim = min(w, h)
                 img = img.crop(((w-min_dim)//2, (h-min_dim)//2, (w+min_dim)//2, (h+min_dim)//2))
                 # Save native
-                out_path = os.path.join(EXPORT_DIR, f"{fname_base}_{res}x_native.png")
+                out_path = os.path.join(EXPORT_DIR, f"{fname_base}_{res}x_1_native.png")
                 img_up = img.resize((IMG_SIZE, IMG_SIZE), resample=Image.NEAREST)
                 img_up.save(out_path)
                 print(f"Saved {out_path}")
                 # Save quantized
                 img_quant = quantize_to_palette(img, palette)
-                img_quant_up = img_quant.resize((IMG_SIZE, IMG_SIZE), resample=Image.NEAREST)
-                out_path_quant = os.path.join(EXPORT_DIR, f"{fname_base}_{res}x_quant_palette.png")
+                # Downsample quantized to 64x64, then upsample to 1024x1024 (blocky, nearest)
+                img_quant_64 = img_quant.resize((64, 64), resample=Image.NEAREST)
+                img_quant_up = img_quant_64.resize((IMG_SIZE, IMG_SIZE), resample=Image.NEAREST)
+                out_path_quant = os.path.join(EXPORT_DIR, f"{fname_base}_{res}x_2_quant_palette.png")
                 img_quant_up.save(out_path_quant)
                 print(f"Saved {out_path_quant}")
-                # Save k-means quantized
+                # Downsample k-means quantized to 64x64, then upsample to 1024x1024 (blocky, nearest)
                 img_kmeans = kmeans_quantize(img, palette, k_clusters=K_CLUSTERS)
-                img_kmeans_up = img_kmeans.resize((IMG_SIZE, IMG_SIZE), resample=Image.NEAREST)
-                out_path_kmeans = os.path.join(EXPORT_DIR, f"{fname_base}_{res}x_kmeans_palette.png")
+                img_kmeans_64 = img_kmeans.resize((64, 64), resample=Image.NEAREST)
+                img_kmeans_up = img_kmeans_64.resize((IMG_SIZE, IMG_SIZE), resample=Image.NEAREST)
+                out_path_kmeans = os.path.join(EXPORT_DIR, f"{fname_base}_{res}x_3_kmeans_palette.png")
                 img_kmeans_up.save(out_path_kmeans)
                 print(f"Saved {out_path_kmeans}")
-    print(f"Updated strict numbering to {num:04d} (dummy file: LAST_EXPORT_{num:04d})")
+        print(f"Updated strict numbering to {num:04d} (dummy file: LAST_EXPORT_{num:04d})")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nProcess cancelled by user (KeyboardInterrupt). Exiting cleanly.")
