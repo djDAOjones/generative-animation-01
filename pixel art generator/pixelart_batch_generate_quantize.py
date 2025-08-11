@@ -95,14 +95,87 @@ def quantize_to_palette(img, palette):
     return Image.fromarray(quant)
 
 def main():
-    # --- Get prompt and short description ---
-    # NOTE: For testing, using default prompt and number of versions. Restore interactive input later.
-    prompt = "orange cat"
-    n_versions = 1
+    # --- Interactive input restored ---
+    import random
+    print("Pixel Art Generator Batch - Interactive Mode\n")
+    prompt = input("Enter your prompt: ").strip()
+    if not prompt:
+        print("Prompt cannot be empty.")
+        return
     desc = extract_keywords(prompt)
     print(f"Short description for filenames: {desc}")
+    # Number of versions
+    try:
+        n_versions = int(input("Number of versions (1-10): ").strip())
+        if not (1 <= n_versions <= 10):
+            print("Number must be between 1 and 10.")
+            return
+    except Exception:
+        print("Invalid number.")
+        return
+    # Version types
+    version_types = ['native', 'quant', 'kmeans']
+    print("Version types:")
+    for i, vt in enumerate(version_types, 1):
+        print(f"  {i}. {vt}")
+    print("  4. all")
+    vtype_input = input("Which version types? (number or name, default all): ").strip().lower() or '4'
+    if vtype_input in ['4', 'all', '']:
+        vtype_sel = 'all'
+    elif vtype_input in ['1', 'native']:
+        vtype_sel = 'native'
+    elif vtype_input in ['2', 'quant']:
+        vtype_sel = 'quant'
+    elif vtype_input in ['3', 'kmeans']:
+        vtype_sel = 'kmeans'
+    else:
+        print("Invalid version type.")
+        return
+    # Native resolution selection
+    native_res_choices = [1024, 512, 256, 128, 64, 32, 16]
+    print("Native resolutions:")
+    for i, r in enumerate(native_res_choices, 1):
+        print(f"  {i}. {r}")
+    print(f"  {len(native_res_choices)+1}. all")
+    res_input = input("Which native resolution? (number or value, default all): ").strip()
+    if res_input in [str(len(native_res_choices)+1), "all", ""]:
+        native_resolutions = native_res_choices
+    elif res_input.isdigit() and 1 <= int(res_input) <= len(native_res_choices):
+        native_resolutions = [native_res_choices[int(res_input)-1]]
+    elif res_input in [str(r) for r in native_res_choices]:
+        native_resolutions = [int(res_input)]
+    else:
+        print("Invalid resolution selection.")
+        return
+    # native_resolutions is now always defined before use    # Scheduler selection
+    scheduler_classes = [
+        ("DDIM", DDIMScheduler),
+        ("Euler", EulerDiscreteScheduler),
+        ("PNDM", PNDMScheduler),
+        ("LMS", LMSDiscreteScheduler),
+        ("Heun", HeunDiscreteScheduler),
+        ("DDPM", DDPMScheduler),
+        ("DPMSolverMulti", DPMSolverMultistepScheduler),
+        ("DPMSolverSingle", DPMSolverSinglestepScheduler),
+        ("EulerAncestral", EulerAncestralDiscreteScheduler),
+        ("KDPM2", KDPM2DiscreteScheduler),
+    ]
+    sched_names = [name for name, _ in scheduler_classes]
+    print("Available schedulers:")
+    for i, name in enumerate(sched_names, 1):
+        print(f"  {i}. {name}")
+    print(f"  {len(sched_names)+1}. all")
+    sched_input = input(f"Which scheduler? (number, name, or 'all', default all): ").strip().lower() or str(len(sched_names)+1)
+    if sched_input in [str(len(sched_names)+1), 'all', '']:
+        sched_sel = sched_names
+    elif sched_input.isdigit() and 1 <= int(sched_input) <= len(sched_names):
+        sched_sel = [sched_names[int(sched_input)-1]]
+    elif sched_input in sched_names:
+        sched_sel = [sched_input]
+    else:
+        print("Invalid scheduler selection.")
+        return
     # --- Prepare seeds and letters ---
-    import random
     seeds = []
     for i in range(n_versions):
         if i < 3:
@@ -128,8 +201,10 @@ def main():
         ("EulerAncestral", EulerAncestralDiscreteScheduler),
         ("KDPM2", KDPM2DiscreteScheduler),
     ]
-    # --- For each scheduler ---
+    # --- For each selected scheduler ---
     for sched_name, sched_class in scheduler_classes:
+        if sched_name not in sched_sel:
+            continue
         print(f"\n=== Using Scheduler: {sched_name} ===")
         # Load SDXL pipeline
         pipe = StableDiffusionXLPipeline.from_pretrained(
@@ -146,8 +221,7 @@ def main():
             print(f"Generating option {letter} (seed hidden) with {sched_name}...")
             generator = torch.manual_seed(seed)
             fname_base = f"{num:04d}_{letter}_{desc}_{sched_name}"
-            # Define native resolutions
-            native_resolutions = [1024, 512, 256, 128, 64]
+            # Now use the selected native_resolutions for generation
             for res in native_resolutions:
                 print(f"Generating at native resolution {res}x{res} with {sched_name} ...")
                 img = pipe(prompt, height=res, width=res, generator=torch.manual_seed(seed)).images[0]
@@ -155,26 +229,26 @@ def main():
                 w, h = img.size
                 min_dim = min(w, h)
                 img = img.crop(((w-min_dim)//2, (h-min_dim)//2, (w+min_dim)//2, (h+min_dim)//2))
-                # Save native
-                out_path = os.path.join(EXPORT_DIR, f"{fname_base}_{res}x_1_native.png")
-                img_up = img.resize((IMG_SIZE, IMG_SIZE), resample=Image.NEAREST)
-                img_up.save(out_path)
-                print(f"Saved {out_path}")
-                # Save quantized
-                img_quant = quantize_to_palette(img, palette)
-                # Downsample quantized to 64x64, then upsample to 1024x1024 (blocky, nearest)
-                img_quant_64 = img_quant.resize((64, 64), resample=Image.NEAREST)
-                img_quant_up = img_quant_64.resize((IMG_SIZE, IMG_SIZE), resample=Image.NEAREST)
-                out_path_quant = os.path.join(EXPORT_DIR, f"{fname_base}_{res}x_2_quant_palette.png")
-                img_quant_up.save(out_path_quant)
-                print(f"Saved {out_path_quant}")
-                # Downsample k-means quantized to 64x64, then upsample to 1024x1024 (blocky, nearest)
-                img_kmeans = kmeans_quantize(img, palette, k_clusters=K_CLUSTERS)
-                img_kmeans_64 = img_kmeans.resize((64, 64), resample=Image.NEAREST)
-                img_kmeans_up = img_kmeans_64.resize((IMG_SIZE, IMG_SIZE), resample=Image.NEAREST)
-                out_path_kmeans = os.path.join(EXPORT_DIR, f"{fname_base}_{res}x_3_kmeans_palette.png")
-                img_kmeans_up.save(out_path_kmeans)
-                print(f"Saved {out_path_kmeans}")
+                # Save only selected version types
+                if vtype_sel in ('native', 'all'):
+                    out_path = os.path.join(EXPORT_DIR, f"{fname_base}_{res}x_1_native.png")
+                    img_up = img.resize((IMG_SIZE, IMG_SIZE), resample=Image.NEAREST)
+                    img_up.save(out_path)
+                    print(f"Saved {out_path}")
+                if vtype_sel in ('quant', 'all'):
+                    img_quant = quantize_to_palette(img, palette)
+                    img_quant_64 = img_quant.resize((64, 64), resample=Image.NEAREST)
+                    img_quant_up = img_quant_64.resize((IMG_SIZE, IMG_SIZE), resample=Image.NEAREST)
+                    out_path_quant = os.path.join(EXPORT_DIR, f"{fname_base}_{res}x_2_quant_palette.png")
+                    img_quant_up.save(out_path_quant)
+                    print(f"Saved {out_path_quant}")
+                if vtype_sel in ('kmeans', 'all'):
+                    img_kmeans = kmeans_quantize(img, palette, k_clusters=K_CLUSTERS)
+                    img_kmeans_64 = img_kmeans.resize((64, 64), resample=Image.NEAREST)
+                    img_kmeans_up = img_kmeans_64.resize((IMG_SIZE, IMG_SIZE), resample=Image.NEAREST)
+                    out_path_kmeans = os.path.join(EXPORT_DIR, f"{fname_base}_{res}x_3_kmeans_palette.png")
+                    img_kmeans_up.save(out_path_kmeans)
+                    print(f"Saved {out_path_kmeans}")
         print(f"Updated strict numbering to {num:04d} (dummy file: LAST_EXPORT_{num:04d})")
 
 if __name__ == "__main__":
