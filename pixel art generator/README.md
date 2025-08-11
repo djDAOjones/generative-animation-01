@@ -25,9 +25,36 @@ This script will:
 
 ### 3. Interactive Usage
 - When prompted, enter your image prompt (e.g., `orange cat`).
-- Enter the number of versions/options you want (1-5).
-- The script will automatically generate images for **all 10 supported schedulers** at 5 native resolutions (1024, 512, 256, 128, 64).
-- For each scheduler and each resolution, **three versions** are produced:
+- Enter the number of versions/options you want (1-10).
+- Select the **version type** (native, quant, kmeans, or all) by number (1-4) or by name.
+- Select the **native resolution** by number (1-8) or by value. The supported resolutions are:
+
+  1. 1024
+  2. 512
+  3. 256
+  4. 128
+  5. 64
+  6. 32
+  7. 16
+  8. all (default)
+
+- Select the **scheduler** by number (1-11) or by name. The supported schedulers are:
+
+  1. DDIM
+  2. Euler
+  3. PNDM
+  4. LMS
+  5. Heun
+  6. DDPM
+  7. DPMSolverMulti
+  8. DPMSolverSingle
+  9. EulerAncestral
+  10. KDPM2
+  11. all (default)
+
+- All options can be selected by number or name. Blank input defaults to "all".
+- The script will generate images for the selected combinations only, and all menus use numerical prefixes for fast entry.
+- For each scheduler and each resolution, **three versions** are produced (unless you select a specific type):
   - Native (model output, upsampled to 1024x1024 with hard edges)
   - Palette quantized (color-constrained to thread palette, downsampled to 64x64 then upsampled to 1024x1024 using nearest neighbor for blocky, pixel-art effect)
   - K-means quantized (palette-constrained using clustering, also downsampled to 64x64 then upsampled to 1024x1024 with nearest neighbor)
@@ -75,6 +102,7 @@ Where `<versiontype>` is one of:
 
 ## Notes
 - The script is configured to use your Mac's GPU (MPS) by default. No extra environment variables are needed.
+- Native resolutions now include 32 as an option, and all menus use numerical prefixes for clarity and speed.
 - If you want to automate further (aliases, desktop shortcuts, etc.), see the comments in `run.sh` or ask for help.
 
 ## Additional Scripts
