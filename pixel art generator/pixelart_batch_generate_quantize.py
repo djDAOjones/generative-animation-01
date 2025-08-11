@@ -251,6 +251,14 @@ def main():
                     print(f"Saved {out_path_kmeans}")
         print(f"Updated strict numbering to {num:04d} (dummy file: LAST_EXPORT_{num:04d})")
 
+    # After all generation, run the flexible grid script
+    print("\nRunning flexible grid layout script...")
+    import subprocess
+    try:
+        subprocess.run(["python3", "combine_flexible_grid.py"], check=True)
+    except Exception as e:
+        print(f"Grid script failed: {e}")
+
 if __name__ == "__main__":
     try:
         main()

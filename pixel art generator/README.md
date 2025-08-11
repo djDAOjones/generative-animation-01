@@ -61,7 +61,10 @@ This script will:
 - All outputs are saved in the `exports/` directory with filenames indicating scheduler, resolution, and processing type.
 - You can cancel generation at any time with Ctrl+C (KeyboardInterrupt) for a friendly exit.
 - For rapid workflow/dependency testing, use `python3 quick_scheduler_test.py` to generate a test image for each scheduler.
-- To create a visual grid of kmeans images (rows: native resolutions, columns: schedulers, even spacing), run `python3 combine_kmeans_grid.py` after generating images. The output will be saved as `exports/kmeans_grid_<export_number>.png`.
+- After generation, a flexible grid of outputs is created automatically. The script arranges images by scheduler (columns), resampling version (rows), native resolution (pages), and seed (pages if needed), with all variables labeled on the grid. 
+- When run, the grid script will prompt for a 4-digit batch number. If you leave it blank, it will auto-select the most recent batch. Only images from the selected batch are included in the grid. 
+- You can also run the script manually: `python3 combine_flexible_grid.py`. The output grid(s) will be saved in `exports/` with the batch and page info in the filename.
+- The older `combine_kmeans_grid.py` (rows: native resolutions, columns: schedulers) is still available for legacy grid layouts.
 
 ## File Structure
 - `run.sh` — Standard script to set up the environment and run the generator
