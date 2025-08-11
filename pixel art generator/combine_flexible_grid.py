@@ -100,50 +100,109 @@ def get_unique(records, key):
     return sorted(list({r[key] for r in records}))
 
 def grid_for(records, scheds, vtypes, ress, seeds, export_dir, out_prefix, batch=None, prompt=None):
-    # Determine grid axes and paging
-    # For this implementation, columns = scheds, rows = vtypes, page for each (res, seed)
-    for res in ress:
-        for seed in seeds:
-            ncols = len(scheds)
-            nrows = len(vtypes)
-            grid_w = ncols * (CELL_SIZE + 2*TILE_MARGIN) + (ncols+1)*SPACING
-            grid_h = LABEL_HEIGHT + nrows * (CELL_SIZE + 2*TILE_MARGIN + METADATA_HEIGHT) + (nrows+1)*SPACING
-            canvas = Image.new("RGBA", (grid_w, grid_h), (255,255,255,255))
-            draw = ImageDraw.Draw(canvas)
+    # Ensure resolutions are sorted high-to-low for display
+    ress = sorted(ress, reverse=True)
 
-            # No grid title (no batch or prompt)
+    """
+    Flexible grid arrangement based on user priority:
+    1. Scheduler (sched)
+    2. Resampling version (vtype)
+    3. Native resolution (res)
+    4. Seed version (seed)
+    
+    Columns: highest-priority variable with >1 value
+    Rows: next-highest-priority variable with >1 value
+    Any remaining variable(s) with >1 value: split into multiple documents
+    """
+    
+    # List of (variable name, unique values)
+    variables = [
+        ("sched", scheds),
+        ("vtype", vtypes),
+        ("res", ress),
+        ("seed", seeds)
+    ]
+    # Only consider variables with >1 unique value
+    multi_vars = [(name, vals) for name, vals in variables if len(vals) > 1]
+    single_vars = [(name, vals) for name, vals in variables if len(vals) == 1]
+    
+    # Assign columns, rows, docs
+    col_var, row_var, doc_vars = None, None, []
+    if len(multi_vars) >= 1:
+        col_var = multi_vars[0]
+    if len(multi_vars) >= 2:
+        row_var = multi_vars[1]
+    if len(multi_vars) > 2:
+        doc_vars = multi_vars[2:]
+    
+    # If not enough multi_vars, fill with single_vars (for filtering)
+    all_vars = multi_vars + single_vars
+    var_dict = {name: vals for name, vals in all_vars}
+    
+    # Prepare all doc-var combinations (cartesian product)
+    from itertools import product
+    doc_combos = [()]  # Default: one doc if no doc_vars
+    if doc_vars:
+        doc_names, doc_lists = zip(*doc_vars)
+        doc_combos = list(product(*doc_lists))
+    else:
+        doc_names = ()
+    
+    for doc_idx, doc_vals in enumerate(doc_combos):
+        # Filter records for this document
+        doc_filter = dict(zip(doc_names, doc_vals))
+        filtered_records = records
+        for k, v in doc_filter.items():
+            filtered_records = [r for r in filtered_records if str(r[k]) == str(v)]
+        
+        # Get values for columns and rows (should be >1)
+        col_name, col_vals = col_var if col_var else (None, [None])
+        row_name, row_vals = row_var if row_var else (None, [None])
+        ncols = len(col_vals)
+        nrows = len(row_vals)
+        grid_w = ncols * (CELL_SIZE + 2*TILE_MARGIN) + (ncols+1)*SPACING
+        grid_h = LABEL_HEIGHT + nrows * (CELL_SIZE + 2*TILE_MARGIN + METADATA_HEIGHT) + (nrows+1)*SPACING
+        canvas = Image.new("RGBA", (grid_w, grid_h), (255,255,255,255))
+        draw = ImageDraw.Draw(canvas)
+        # Draw images and metadata
+        for row, row_val in enumerate(row_vals):
+            for col, col_val in enumerate(col_vals):
+                # Build filter for this cell
+                cell_filter = {col_name: col_val, row_name: row_val}
+                cell_filter.update(doc_filter)
+                # Fill in any single-value variables
+                for name, vals in single_vars:
+                    cell_filter[name] = vals[0]
+                # Find record matching all criteria
+                rec = next((r for r in filtered_records if all(str(r.get(k)) == str(v) for k, v in cell_filter.items() if k)), None)
+                x = SPACING + col * (CELL_SIZE + 2*TILE_MARGIN + SPACING)
+                y = LABEL_HEIGHT + SPACING + row * (CELL_SIZE + 2*TILE_MARGIN + METADATA_HEIGHT + SPACING)
+                if rec:
+                    img = Image.open(os.path.join(export_dir, rec['fname'])).convert("RGBA")
+                    img_w, img_h = img.size
+                    paste_x = x + TILE_MARGIN + (CELL_SIZE-img_w)//2
+                    paste_y = y + TILE_MARGIN
+                    canvas.paste(img, (paste_x, paste_y))
+                    # Metadata lines
+                    meta1 = f"{rec.get('sched', '')}, {rec.get('res', '')}"
+                    meta2 = f"Seed: {rec.get('seed', '')}"
+                    meta3 = f"{rec.get('vtype', '')}"
+                    meta_x = x + TILE_MARGIN
+                    meta_y = y + TILE_MARGIN + CELL_SIZE + 4
+                    draw.text((meta_x, meta_y), meta1, font=FONT, fill=(0,0,0,255), anchor="la")
+                    draw.text((meta_x, meta_y+FONT_SIZE), meta2, font=FONT, fill=(0,0,0,255), anchor="la")
+                    draw.text((meta_x, meta_y+2*FONT_SIZE), meta3, font=FONT, fill=(0,0,0,255), anchor="la")
+                else:
+                    draw.rectangle([x+TILE_MARGIN, y+TILE_MARGIN, x+TILE_MARGIN+CELL_SIZE-1, y+TILE_MARGIN+CELL_SIZE-1], outline=(255,0,0,255), width=5)
+        # Save
+        doc_suffix = ""
+        if doc_vars:
+            doc_suffix = "_" + "_".join(f"{k}{v}" for k, v in zip(doc_names, doc_vals))
+        outname = f"{out_prefix}{doc_suffix}.png"
+        outpath = os.path.join(export_dir, outname)
+        canvas.save(outpath)
+        print(f"Saved {outpath}")
 
-            # Draw images and metadata
-            for row, vtype in enumerate(vtypes):
-                for col, sched in enumerate(scheds):
-                    rec = next((r for r in records if r['sched']==sched and r['vtype']==vtype and r['res']==res and r['seed']==seed), None)
-                    x = SPACING + col * (CELL_SIZE + 2*TILE_MARGIN + SPACING)
-                    y = LABEL_HEIGHT + SPACING + row * (CELL_SIZE + 2*TILE_MARGIN + METADATA_HEIGHT + SPACING)
-                    # Draw tile background (optional)
-                    # draw.rectangle([x, y, x+CELL_SIZE+2*TILE_MARGIN, y+CELL_SIZE+2*TILE_MARGIN+METADATA_HEIGHT], fill=(245,245,245,255))
-                    if rec:
-                        img = Image.open(os.path.join(export_dir, rec['fname'])).convert("RGBA")
-                        img_w, img_h = img.size
-                        paste_x = x + TILE_MARGIN + (CELL_SIZE-img_w)//2
-                        paste_y = y + TILE_MARGIN
-                        canvas.paste(img, (paste_x, paste_y))
-                        # Metadata lines
-                        meta1 = f"{rec['sched']}, {rec['res']}"
-                        meta2 = f"Seed: {rec['seed']}"
-                        meta3 = f"{rec['vtype']}"
-                        meta_x = x + TILE_MARGIN
-                        meta_y = y + TILE_MARGIN + CELL_SIZE + 4
-                        draw.text((meta_x, meta_y), meta1, font=FONT, fill=(0,0,0,255), anchor="la")
-                        draw.text((meta_x, meta_y+FONT_SIZE), meta2, font=FONT, fill=(0,0,0,255), anchor="la")
-                        draw.text((meta_x, meta_y+2*FONT_SIZE), meta3, font=FONT, fill=(0,0,0,255), anchor="la")
-                    else:
-                        draw.rectangle([x+TILE_MARGIN, y+TILE_MARGIN, x+TILE_MARGIN+CELL_SIZE-1, y+TILE_MARGIN+CELL_SIZE-1], outline=(255,0,0,255), width=5)
-                        # Optionally, draw missing metadata
-            # Save
-            outname = f"{out_prefix}_res{res}_seed{seed}.png"
-            outpath = os.path.join(export_dir, outname)
-            canvas.save(outpath)
-            print(f"Saved {outpath}")
 
 def combined_grid(records, scheds, vtypes, ress, seeds, export_dir, out_prefix, batch=None, prompt=None):
     # Settings for title
