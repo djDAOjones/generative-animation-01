@@ -198,7 +198,19 @@ def grid_for(records, scheds, vtypes, ress, seeds, export_dir, out_prefix, batch
         doc_suffix = ""
         if doc_vars:
             doc_suffix = "_" + "_".join(f"{k}{v}" for k, v in zip(doc_names, doc_vals))
-        outname = f"{out_prefix}{doc_suffix}.png"
+        # Compose output filename with batch, prompt, scheduler (if only one), and 'flexgrid'
+        # Example: 0027_orange_cat_DDIM_flexgrid.png or 0027_orange_cat_flexgrid_page2.png
+        sched_part = ''
+        if len(scheds) == 1:
+            sched_part = f"_{scheds[0]}"
+        prompt_part = ''
+        if prompt:
+            prompt_part = f"_{prompt}"
+        # Since grid_for does not use page_groups, just use doc_idx for page numbering if needed
+        page_part = ''
+        if len(doc_combos) > 1:
+            page_part = f"_page{doc_idx+1}"
+        outname = f"{batch or ''}{prompt_part}{sched_part}_flexgrid{page_part}.png"
         outpath = os.path.join(export_dir, outname)
         canvas.save(outpath)
         print(f"Saved {outpath}")
@@ -258,33 +270,59 @@ def combined_grid(records, scheds, vtypes, ress, seeds, export_dir, out_prefix, 
                     else:
                         draw.rectangle([x+TILE_MARGIN, y+TILE_MARGIN, x+TILE_MARGIN+CELL_SIZE-1, y+TILE_MARGIN+CELL_SIZE-1], outline=(255,0,0,255), width=5)
         outname = f"{out_prefix}_combined_page{idx+1}.png"
-        outpath = os.path.join(export_dir, outname)
+        # Save final grid in main exports/ folder, not batch folder
+        # If export_dir is .../exports/####, save to .../exports/
+        # If export_dir is .../exports/, save to .../exports/
+        # Otherwise, fallback to EXPORT_DIR
+        if os.path.basename(export_dir).isdigit() and len(os.path.basename(export_dir)) == 4:
+            main_exports_dir = os.path.dirname(export_dir)
+        elif os.path.basename(export_dir) == "exports":
+            main_exports_dir = export_dir
+        else:
+            main_exports_dir = EXPORT_DIR
+        outpath = os.path.join(main_exports_dir, outname)
         canvas.save(outpath)
         print(f"Saved {outpath}")
 
 def main():
     args = parse_args()
-    records = collect_outputs(args.export_dir)
+    export_dir = args.export_dir
+    # If export_dir is 'exports' or not a batch folder, prompt for batch
+    if os.path.basename(os.path.normpath(export_dir)) == 'exports' or not os.path.isdir(export_dir):
+        # Scan for batch subfolders
+        batch_folders = [f for f in os.listdir(export_dir) if os.path.isdir(os.path.join(export_dir, f)) and f.isdigit() and len(f) == 4]
+        batch_folders = sorted(batch_folders)
+        if not batch_folders:
+            print("No batch folders found in exports/.")
+            return
+        print(f"Available batch numbers: {', '.join(batch_folders)}")
+        default_batch = batch_folders[-1]
+        batch = input(f"Which 4-digit batch number? (blank for most recent: {default_batch}): ").strip()
+        if not batch or batch not in batch_folders:
+            batch = default_batch
+        export_dir = os.path.join(export_dir, batch)
+        print(f"Using batch folder: {export_dir}")
+    # Now collect outputs from the batch folder
+    records = collect_outputs(export_dir)
     if not records:
-        print("No outputs found.")
+        print("No outputs found in selected batch folder.")
         return
-    batch = prompt_for_batch(records)
-    if not batch:
-        print("No valid batch numbers found.")
-        return
-    records = [r for r in records if r['export_num'] == batch]
-    print(f"Using batch number: {batch}")
-    if not records:
-        print("No outputs found for the selected batch.")
-        return
+    # All records should have the same batch number
+    batch = records[0]['export_num'] if records else ''
     scheds = get_unique(records, 'sched')
     vtypes = get_unique(records, 'vtype')
     ress = get_unique(records, 'res')
     seeds = get_unique(records, 'seed')
-    print(f"Schedulers: {scheds}\nResampling: {vtypes}\nResolutions: {ress}\nSeeds: {seeds}")
-    grid_for(records, scheds, vtypes, ress, seeds, args.export_dir, args.out, batch=batch, prompt=None)
-    # Extract prompt from a representative record if present
     prompt = None
+    for r in records:
+        if 'prompt_short' in r:
+            prompt = r['prompt_short']
+            break
+        elif 'prompt' in r:
+            prompt = r['prompt']
+            break
+    grid_for(records, scheds, vtypes, ress, seeds, export_dir, args.out, batch=batch, prompt=None)
+    # Extract prompt from a representative record if present
     for r in records:
         if 'prompt_short' in r:
             prompt = r['prompt_short']
@@ -299,7 +337,8 @@ def main():
         if len(parts) > 2:
             prompt = parts[2]
     # Generate combined grid for all images in batch
-    combined_grid(records, scheds, vtypes, ress, seeds, args.export_dir, args.out, batch=batch, prompt=prompt)
+    combined_grid(records, scheds, vtypes, ress, seeds, export_dir, args.out, batch=batch, prompt=prompt)
+
 
 if __name__ == "__main__":
     main()
