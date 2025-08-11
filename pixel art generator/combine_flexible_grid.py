@@ -23,15 +23,39 @@ import argparse
 EXPORT_DIR = "exports"
 OUT_PREFIX = "flexgrid"
 CELL_SIZE = 1024
-SPACING = 32
-LABEL_HEIGHT = 80
-FONT_SIZE = 48
+TILE_MARGIN = 20  # px around each image
+SPACING = TILE_MARGIN * 2  # 40px between tiles
+METADATA_HEIGHT = 3 * 18  # 3 lines, 18px each (font size 12 + margin)
+LABEL_HEIGHT = 40  # for grid title at top
+FONT_SIZE = 28
 
-# Try to load a default font
-try:
-    FONT = ImageFont.truetype("DejaVuSans.ttf", FONT_SIZE)
-except Exception:
-    FONT = ImageFont.load_default()
+import sys
+# Try to use DejaVuSans.ttf from script dir or fonts/ subdir, fallback to any DejaVuSans*.ttf in fonts/
+def find_font():
+    script_dir = os.path.dirname(__file__)
+    candidates = [
+        os.path.join(script_dir, "DejaVuSans.ttf"),
+        os.path.join(script_dir, "fonts", "DejaVuSans.ttf")
+    ]
+    # Add any DejaVuSans*.ttf in fonts/
+    fonts_dir = os.path.join(script_dir, "fonts")
+    if os.path.isdir(fonts_dir):
+        for fname in os.listdir(fonts_dir):
+            if fname.lower().startswith("dejavusans") and fname.lower().endswith(".ttf"):
+                candidates.append(os.path.join(fonts_dir, fname))
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    print("ERROR: No DejaVuSans .ttf font found. Looked for:")
+    for path in candidates:
+        print(f" - {path}")
+    print("Please download DejaVuSans.ttf and place it in the script or fonts/ directory.")
+    sys.exit(1)
+
+FONT_PATH = find_font()
+FONT = ImageFont.truetype(FONT_PATH, FONT_SIZE)
+
+METADATA_HEIGHT = 3 * FONT_SIZE  # 3 lines, exactly font size spacing
 
 # Parse command-line arguments
 def parse_args():
@@ -75,44 +99,109 @@ def collect_outputs(export_dir):
 def get_unique(records, key):
     return sorted(list({r[key] for r in records}))
 
-def grid_for(records, scheds, vtypes, ress, seeds, export_dir, out_prefix):
-    # For each (res, seed) page
+def grid_for(records, scheds, vtypes, ress, seeds, export_dir, out_prefix, batch=None, prompt=None):
+    # Determine grid axes and paging
+    # For this implementation, columns = scheds, rows = vtypes, page for each (res, seed)
     for res in ress:
         for seed in seeds:
-            grid_w = len(scheds) * CELL_SIZE + (len(scheds)+1)*SPACING
-            grid_h = len(vtypes) * CELL_SIZE + (len(vtypes)+1)*SPACING + LABEL_HEIGHT
+            ncols = len(scheds)
+            nrows = len(vtypes)
+            grid_w = ncols * (CELL_SIZE + 2*TILE_MARGIN) + (ncols+1)*SPACING
+            grid_h = LABEL_HEIGHT + nrows * (CELL_SIZE + 2*TILE_MARGIN + METADATA_HEIGHT) + (nrows+1)*SPACING
             canvas = Image.new("RGBA", (grid_w, grid_h), (255,255,255,255))
             draw = ImageDraw.Draw(canvas)
-            # Draw column labels (schedulers)
-            for col, sched in enumerate(scheds):
-                x = SPACING + col* (CELL_SIZE+SPACING)
-                draw.text((x+CELL_SIZE//2, 10), sched, font=FONT, fill=(0,0,0,255), anchor="ma")
-            # Draw row labels (vtypes)
-            for row, vtype in enumerate(vtypes):
-                y = LABEL_HEIGHT + SPACING + row*(CELL_SIZE+SPACING)
-                draw.text((10, y+CELL_SIZE//2), vtype, font=FONT, fill=(0,0,0,255), anchor="lm")
-            # Place images
+
+            # No grid title (no batch or prompt)
+
+            # Draw images and metadata
             for row, vtype in enumerate(vtypes):
                 for col, sched in enumerate(scheds):
                     rec = next((r for r in records if r['sched']==sched and r['vtype']==vtype and r['res']==res and r['seed']==seed), None)
-                    x = SPACING + col*(CELL_SIZE+SPACING)
-                    y = LABEL_HEIGHT + SPACING + row*(CELL_SIZE+SPACING)
+                    x = SPACING + col * (CELL_SIZE + 2*TILE_MARGIN + SPACING)
+                    y = LABEL_HEIGHT + SPACING + row * (CELL_SIZE + 2*TILE_MARGIN + METADATA_HEIGHT + SPACING)
+                    # Draw tile background (optional)
+                    # draw.rectangle([x, y, x+CELL_SIZE+2*TILE_MARGIN, y+CELL_SIZE+2*TILE_MARGIN+METADATA_HEIGHT], fill=(245,245,245,255))
                     if rec:
                         img = Image.open(os.path.join(export_dir, rec['fname'])).convert("RGBA")
                         img_w, img_h = img.size
-                        paste_x = x + (CELL_SIZE-img_w)//2
-                        paste_y = y + (CELL_SIZE-img_h)//2
+                        paste_x = x + TILE_MARGIN + (CELL_SIZE-img_w)//2
+                        paste_y = y + TILE_MARGIN
                         canvas.paste(img, (paste_x, paste_y))
+                        # Metadata lines
+                        meta1 = f"{rec['sched']}, {rec['res']}"
+                        meta2 = f"Seed: {rec['seed']}"
+                        meta3 = f"{rec['vtype']}"
+                        meta_x = x + TILE_MARGIN
+                        meta_y = y + TILE_MARGIN + CELL_SIZE + 4
+                        draw.text((meta_x, meta_y), meta1, font=FONT, fill=(0,0,0,255), anchor="la")
+                        draw.text((meta_x, meta_y+FONT_SIZE), meta2, font=FONT, fill=(0,0,0,255), anchor="la")
+                        draw.text((meta_x, meta_y+2*FONT_SIZE), meta3, font=FONT, fill=(0,0,0,255), anchor="la")
                     else:
-                        draw.rectangle([x, y, x+CELL_SIZE-1, y+CELL_SIZE-1], outline=(255,0,0,255), width=5)
-            # Page label
-            page_label = f"res={res}, seed={seed}"
-            draw.text((grid_w//2, grid_h-LABEL_HEIGHT//2), page_label, font=FONT, fill=(0,0,0,255), anchor="mm")
+                        draw.rectangle([x+TILE_MARGIN, y+TILE_MARGIN, x+TILE_MARGIN+CELL_SIZE-1, y+TILE_MARGIN+CELL_SIZE-1], outline=(255,0,0,255), width=5)
+                        # Optionally, draw missing metadata
             # Save
             outname = f"{out_prefix}_res{res}_seed{seed}.png"
             outpath = os.path.join(export_dir, outname)
             canvas.save(outpath)
             print(f"Saved {outpath}")
+
+def combined_grid(records, scheds, vtypes, ress, seeds, export_dir, out_prefix, batch=None, prompt=None):
+    # Settings for title
+    TITLE_FONT_SIZE = 48
+    TITLE_MARGIN = 40
+    title_font = ImageFont.truetype(FONT_PATH, TITLE_FONT_SIZE)
+    # We'll page over (res, seed) pairs if >1 of either
+    pages = []
+    for res in ress:
+        for seed in seeds:
+            pages.append((res, seed))
+    # Try to fit all pages in one grid if possible
+    if len(pages) == 1:
+        page_groups = [pages]
+    else:
+        # For each page, make a grid of scheds x vtypes
+        # If too many pages, group them (e.g., 4 pages per combined grid)
+        group_size = 4  # show up to 4 (res,seed) combos per combined grid
+        page_groups = [pages[i:i+group_size] for i in range(0, len(pages), group_size)]
+    for idx, group in enumerate(page_groups):
+        ncols = len(scheds) * len(group)
+        nrows = len(vtypes)
+        grid_w = ncols * (CELL_SIZE + 2*TILE_MARGIN) + (ncols+1)*SPACING + 2*TITLE_MARGIN
+        grid_h = TITLE_MARGIN + TITLE_FONT_SIZE + TITLE_MARGIN + nrows * (CELL_SIZE + 2*TILE_MARGIN + METADATA_HEIGHT) + (nrows+1)*SPACING + TITLE_MARGIN
+        canvas = Image.new("RGBA", (grid_w, grid_h), (255,255,255,255))
+        draw = ImageDraw.Draw(canvas)
+        # Draw page title (batch + prompt) at top center with 40px margin all around
+        title = f"Batch: {batch or ''} | Prompt: {prompt or ''}"
+        title_y = TITLE_MARGIN + TITLE_FONT_SIZE//2
+        draw.text((grid_w//2, title_y), title, font=title_font, fill=(0,0,0,255), anchor="mm")
+        # Draw images and metadata
+        for g, (res, seed) in enumerate(group):
+            for row, vtype in enumerate(vtypes):
+                for col, sched in enumerate(scheds):
+                    rec = next((r for r in records if r['sched']==sched and r['vtype']==vtype and r['res']==res and r['seed']==seed), None)
+                    x = TITLE_MARGIN + SPACING + (g*len(scheds)+col) * (CELL_SIZE + 2*TILE_MARGIN + SPACING)
+                    y = TITLE_MARGIN + TITLE_FONT_SIZE + TITLE_MARGIN + SPACING + row * (CELL_SIZE + 2*TILE_MARGIN + METADATA_HEIGHT + SPACING)
+                    if rec:
+                        img = Image.open(os.path.join(export_dir, rec['fname'])).convert("RGBA")
+                        img_w, img_h = img.size
+                        paste_x = x + TILE_MARGIN + (CELL_SIZE-img_w)//2
+                        paste_y = y + TILE_MARGIN
+                        canvas.paste(img, (paste_x, paste_y))
+                        # Metadata lines
+                        meta1 = f"{rec['sched']}, {rec['res']}"
+                        meta2 = f"Seed: {rec['seed']}"
+                        meta3 = f"{rec['vtype']}"
+                        meta_x = x + TILE_MARGIN
+                        meta_y = y + TILE_MARGIN + CELL_SIZE
+                        draw.text((meta_x, meta_y), meta1, font=FONT, fill=(0,0,0,255), anchor="la")
+                        draw.text((meta_x, meta_y+FONT_SIZE), meta2, font=FONT, fill=(0,0,0,255), anchor="la")
+                        draw.text((meta_x, meta_y+2*FONT_SIZE), meta3, font=FONT, fill=(0,0,0,255), anchor="la")
+                    else:
+                        draw.rectangle([x+TILE_MARGIN, y+TILE_MARGIN, x+TILE_MARGIN+CELL_SIZE-1, y+TILE_MARGIN+CELL_SIZE-1], outline=(255,0,0,255), width=5)
+        outname = f"{out_prefix}_combined_page{idx+1}.png"
+        outpath = os.path.join(export_dir, outname)
+        canvas.save(outpath)
+        print(f"Saved {outpath}")
 
 def main():
     args = parse_args()
@@ -134,7 +223,24 @@ def main():
     ress = get_unique(records, 'res')
     seeds = get_unique(records, 'seed')
     print(f"Schedulers: {scheds}\nResampling: {vtypes}\nResolutions: {ress}\nSeeds: {seeds}")
-    grid_for(records, scheds, vtypes, ress, seeds, args.export_dir, args.out)
+    grid_for(records, scheds, vtypes, ress, seeds, args.export_dir, args.out, batch=batch, prompt=None)
+    # Extract prompt from a representative record if present
+    prompt = None
+    for r in records:
+        if 'prompt_short' in r:
+            prompt = r['prompt_short']
+            break
+        elif 'prompt' in r:
+            prompt = r['prompt']
+            break
+    if not prompt and records:
+        # fallback: try to parse from filename
+        fname = records[0]['fname']
+        parts = fname.split('_')
+        if len(parts) > 2:
+            prompt = parts[2]
+    # Generate combined grid for all images in batch
+    combined_grid(records, scheds, vtypes, ress, seeds, args.export_dir, args.out, batch=batch, prompt=prompt)
 
 if __name__ == "__main__":
     main()
