@@ -1,4 +1,5 @@
 #!/bin/bash
+set -x
 # Standard run script for Pixel Art Generator project
 
 # Navigate to project directory

@@ -58,12 +58,14 @@ This script will:
   - Native (model output, upsampled to 1024x1024 with hard edges)
   - Palette quantized (color-constrained to thread palette, downsampled to 64x64 then upsampled to 1024x1024 using nearest neighbor for blocky, pixel-art effect)
   - K-means quantized (palette-constrained using clustering, also downsampled to 64x64 then upsampled to 1024x1024 with nearest neighbor)
-- All outputs are saved in the `exports/` directory with filenames indicating scheduler, resolution, and processing type.
+- All outputs are saved in the `exports/` directory with filenames indicating scheduler, resolution, processing type, and batch number where relevant.
+- All **grid outputs** (including legacy, paged, and combined grids) are saved directly in `exports/` with filenames prepended by `grid_` for easy identification. Grid outputs are uniquely named with batch, scheduler, and/or page information to avoid overwriting.
 - You can cancel generation at any time with Ctrl+C (KeyboardInterrupt) for a friendly exit.
 - For rapid workflow/dependency testing, use `python3 quick_scheduler_test.py` to generate a test image for each scheduler.
 - After generation, a flexible grid of outputs is created automatically. The script arranges images by scheduler (columns), resampling version (rows), native resolution (pages), and seed (pages if needed), with all variables labeled on the grid. 
-- When run, the grid script will prompt for a 4-digit batch number. If you leave it blank, it will auto-select the most recent batch. Only images from the selected batch are included in the grid. 
-- You can also run the script manually: `python3 combine_flexible_grid.py`. The output grid(s) will be saved in `exports/` with the batch and page info in the filename.
+- Grid outputs are always saved in the main `exports/` directory, never in batch subfolders.
+- When run, the grid script will prompt for a 4-digit batch number. If you leave it blank, it will auto-select the most recent batch. Only images from the selected batch are included in the grid.
+- You can also run the script manually: `python3 combine_flexible_grid.py`. The output grid(s) will be saved in `exports/` with filenames like `grid_<batch>_<scheduler>_flexgrid_pageN.png`, ensuring uniqueness and clarity.
 - The older `combine_kmeans_grid.py` (rows: native resolutions, columns: schedulers) is still available for legacy grid layouts.
 
 ## File Structure
@@ -74,7 +76,10 @@ This script will:
 - `.venv/` — Python virtual environment (auto-created)
 - `requirements.txt` — List of pinned Python dependencies
 - `Thread Maps Lookup.csv` — Color palette lookup for quantization
-- `exports/` — Output directory for generated images and grid exports
+- `exports/` — Output directory for generated images and grid exports. All grid outputs are saved here, and intermediate files are automatically cleaned up.
+
+## Grid Output Cleanup
+Intermediate files like `grid_flexgrid_combined_page*.png` are automatically cleaned up after each batch or single gridder run, ensuring a tidy output directory.
 
 ## Restarting After Reboot or Closing IDE
 1. Open a terminal and navigate to the project directory.
@@ -94,6 +99,8 @@ The following schedulers are tested and supported for Apple Silicon (M1/M2) GPU 
 - KDPM2
 
 ## Output Naming
+
+### Individual Image Outputs
 Output files are named as follows:
 ```
 <export_number>_<option_letter>_<prompt_short>_<scheduler>_<resolution>x_<versiontype>.png
@@ -103,6 +110,17 @@ Where `<versiontype>` is one of:
 - `quant_palette` (palette quantized)
 - `kmeans_palette` (k-means quantized)
 
+### Grid Outputs
+All grid outputs (legacy, paged, combined) are saved in `exports/` with filenames like:
+```
+grid_<batch>_<prompt>_<scheduler>_flexgrid_pageN.png
+grid_legacy_flexgrid_<batch>.png
+grid_flexgrid_combined_pageN.png
+```
+Filenames always begin with `grid_` for easy identification. Batch number, scheduler, and/or page info are included for uniqueness.
+
+### Automatic Cleanup of Intermediate Grid Files
+Intermediate files such as `grid_flexgrid_combined_page*.png` and `flexgrid_combined_page*.png` are automatically deleted from `exports/` after each batch or single gridder run. Only the final grid outputs remain for easy access and organization.
 ## Notes
 - The script is configured to use your Mac's GPU (MPS) by default. No extra environment variables are needed.
 - Native resolutions now include 32 as an option, and all menus use numerical prefixes for clarity and speed.

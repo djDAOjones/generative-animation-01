@@ -14,6 +14,7 @@ if not batch_folders:
     print("No batch folders found in exports/.")
     exit(1)
 
+import shutil
 for batch in batch_folders:
     batch_dir = os.path.join(EXPORTS_DIR, batch)
     print(f"Processing batch {batch}...")
@@ -26,6 +27,7 @@ for batch in batch_folders:
     else:
         print(f"Batch {batch} completed.\n")
 
+
 print("All batches processed.")
 
 # Cleanup temp/intermediate files (flexgrid_combined_page*.png) from exports/ and subfolders
@@ -33,7 +35,7 @@ def cleanup_flexgrid_combined():
     removed = 0
     for root, dirs, files in os.walk(EXPORTS_DIR):
         for fname in files:
-            if fname.startswith("flexgrid_combined_page") and fname.endswith(".png"):
+            if (fname.startswith("flexgrid_combined_page") or fname.startswith("grid_flexgrid_combined_page")) and fname.endswith(".png"):
                 fpath = os.path.join(root, fname)
                 try:
                     os.remove(fpath)

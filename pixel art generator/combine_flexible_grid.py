@@ -94,12 +94,64 @@ def collect_outputs(export_dir):
     files = [f for f in os.listdir(export_dir) if f.endswith('.png')]
     records = [parse_filename(f) for f in files]
     records = [r for r in records if r]
+    if not records and files:
+        # Fallback: no parseable files, just make minimal records
+        records = [{
+            'fname': f,
+            'sched': 'n/a',
+            'vtype': 'n/a',
+            'res': 0,
+            'seed': 'n/a',
+            'export_num': 'n/a',
+            'fallback': True
+        } for f in sorted(files)]
     return records
 
 def get_unique(records, key):
     return sorted(list({r[key] for r in records}))
 
 def grid_for(records, scheds, vtypes, ress, seeds, export_dir, out_prefix, batch=None, prompt=None):
+    # Fallback: if all records are legacy/fallback, do a simple grid and save as legacy_flexgrid.png in exports/
+    if records and all(r.get('fallback') for r in records):
+        n = len(records)
+        if n == 0:
+            print("No images found for legacy batch.")
+            return
+        cols = min(5, n)
+        rows = (n + cols - 1) // cols
+        grid_w = cols * (CELL_SIZE + 2*TILE_MARGIN) + (cols+1)*SPACING
+        grid_h = rows * (CELL_SIZE + 2*TILE_MARGIN) + (rows+1)*SPACING
+        canvas = Image.new("RGBA", (grid_w, grid_h), (255,255,255,255))
+        draw = ImageDraw.Draw(canvas)
+        for idx, rec in enumerate(records):
+            row = idx // cols
+            col = idx % cols
+            x = SPACING + col * (CELL_SIZE + 2*TILE_MARGIN + SPACING)
+            y = SPACING + row * (CELL_SIZE + 2*TILE_MARGIN + SPACING)
+            try:
+                img = Image.open(os.path.join(export_dir, rec['fname'])).convert("RGBA")
+                img_w, img_h = img.size
+                paste_x = x + TILE_MARGIN + (CELL_SIZE-img_w)//2
+                paste_y = y + TILE_MARGIN
+                canvas.paste(img, (paste_x, paste_y))
+            except Exception as e:
+                draw.rectangle([x+TILE_MARGIN, y+TILE_MARGIN, x+TILE_MARGIN+CELL_SIZE-1, y+TILE_MARGIN+CELL_SIZE-1], outline=(255,0,0,255), width=5)
+        # Use batch serial if available for uniqueness, fallback to folder name if export_num is 'n/a'
+        batch_serial = batch
+        if not batch_serial or batch_serial == 'n/a':
+            batch_serial = os.path.basename(os.path.normpath(export_dir))
+        # Ensure batch_serial is not empty, fallback to timestamp if needed
+        if not batch_serial:
+            from datetime import datetime
+            batch_serial = datetime.now().strftime('%Y%m%d_%H%M%S')
+        outname = f"grid_legacy_flexgrid_{batch_serial}.png"
+        exports_abs = os.path.abspath(EXPORT_DIR)
+        if not os.path.exists(exports_abs):
+            os.makedirs(exports_abs, exist_ok=True)
+        outpath = os.path.join(exports_abs, outname)
+        canvas.save(outpath)
+        print(f"Saved {outpath}")
+        return
     # Ensure resolutions are sorted high-to-low for display
     ress = sorted(ress, reverse=True)
 
@@ -210,8 +262,12 @@ def grid_for(records, scheds, vtypes, ress, seeds, export_dir, out_prefix, batch
         page_part = ''
         if len(doc_combos) > 1:
             page_part = f"_page{doc_idx+1}"
-        outname = f"{batch or ''}{prompt_part}{sched_part}_flexgrid{page_part}.png"
-        outpath = os.path.join(export_dir, outname)
+        outname = f"grid_{batch or ''}{prompt_part}{sched_part}_flexgrid{page_part}.png"
+        # Always save non-legacy grid pages to the main exports directory
+        exports_abs = os.path.abspath(EXPORT_DIR)
+        if not os.path.exists(exports_abs):
+            os.makedirs(exports_abs, exist_ok=True)
+        outpath = os.path.join(exports_abs, outname)
         canvas.save(outpath)
         print(f"Saved {outpath}")
 
@@ -234,6 +290,37 @@ def combined_grid(records, scheds, vtypes, ress, seeds, export_dir, out_prefix, 
         # If too many pages, group them (e.g., 4 pages per combined grid)
         group_size = 4  # show up to 4 (res,seed) combos per combined grid
         page_groups = [pages[i:i+group_size] for i in range(0, len(pages), group_size)]
+    # Fallback: if all records have 'fallback', make a simple grid
+    if records and all(r.get('fallback') for r in records):
+        # Parameters
+        fallback_imgs = [r['fname'] for r in records]
+        N = len(fallback_imgs)
+        max_cols = 6 if N > 6 else N
+        ncols = max_cols
+        nrows = (N + max_cols - 1) // max_cols
+        grid_w = ncols * (CELL_SIZE + 2*TILE_MARGIN) + (ncols+1)*SPACING + 2*TITLE_MARGIN
+        grid_h = TITLE_MARGIN + TITLE_FONT_SIZE + TITLE_MARGIN + nrows * (CELL_SIZE + 2*TILE_MARGIN) + (nrows+1)*SPACING + TITLE_MARGIN
+        canvas = Image.new("RGBA", (grid_w, grid_h), (255,255,255,255))
+        draw = ImageDraw.Draw(canvas)
+        # Title
+        title = f"Legacy Batch | Unparsed Filenames"
+        title_y = TITLE_MARGIN + TITLE_FONT_SIZE//2
+        draw.text((grid_w//2, title_y), title, font=title_font, fill=(0,0,0,255), anchor="mm")
+        # Paste images
+        for i, fname in enumerate(fallback_imgs):
+            row = i // ncols
+            col = i % ncols
+            x = TITLE_MARGIN + SPACING + col * (CELL_SIZE + 2*TILE_MARGIN + SPACING)
+            y = TITLE_MARGIN + TITLE_FONT_SIZE + TITLE_MARGIN + SPACING + row * (CELL_SIZE + 2*TILE_MARGIN + SPACING)
+            try:
+                img = Image.open(os.path.join(export_dir, fname)).convert("RGBA")
+                img_w, img_h = img.size
+                paste_x = x + TILE_MARGIN + (CELL_SIZE-img_w)//2
+                paste_y = y + TILE_MARGIN
+                canvas.paste(img, (paste_x, paste_y))
+            except Exception as e:
+                draw.rectangle([x+TILE_MARGIN, y+TILE_MARGIN, x+TILE_MARGIN+CELL_SIZE-1, y+TILE_MARGIN+CELL_SIZE-1], outline=(255,0,0,255), width=5)
+
     for idx, group in enumerate(page_groups):
         ncols = len(scheds) * len(group)
         nrows = len(vtypes)
@@ -269,18 +356,12 @@ def combined_grid(records, scheds, vtypes, ress, seeds, export_dir, out_prefix, 
                         draw.text((meta_x, meta_y+2*FONT_SIZE), meta3, font=FONT, fill=(0,0,0,255), anchor="la")
                     else:
                         draw.rectangle([x+TILE_MARGIN, y+TILE_MARGIN, x+TILE_MARGIN+CELL_SIZE-1, y+TILE_MARGIN+CELL_SIZE-1], outline=(255,0,0,255), width=5)
-        outname = f"{out_prefix}_combined_page{idx+1}.png"
-        # Save final grid in main exports/ folder, not batch folder
-        # If export_dir is .../exports/####, save to .../exports/
-        # If export_dir is .../exports/, save to .../exports/
-        # Otherwise, fallback to EXPORT_DIR
-        if os.path.basename(export_dir).isdigit() and len(os.path.basename(export_dir)) == 4:
-            main_exports_dir = os.path.dirname(export_dir)
-        elif os.path.basename(export_dir) == "exports":
-            main_exports_dir = export_dir
-        else:
-            main_exports_dir = EXPORT_DIR
-        outpath = os.path.join(main_exports_dir, outname)
+        # Always save combined grid pages to the main exports directory
+        outname = f"grid_{out_prefix}_combined_page{idx+1}.png"
+        exports_abs = os.path.abspath(EXPORT_DIR)
+        if not os.path.exists(exports_abs):
+            os.makedirs(exports_abs, exist_ok=True)
+        outpath = os.path.join(exports_abs, outname)
         canvas.save(outpath)
         print(f"Saved {outpath}")
 
@@ -340,5 +421,22 @@ def main():
     combined_grid(records, scheds, vtypes, ress, seeds, export_dir, args.out, batch=batch, prompt=prompt)
 
 
+def cleanup_flexgrid_combined():
+    removed = 0
+    for root, dirs, files in os.walk(EXPORT_DIR):
+        for fname in files:
+            if (fname.startswith("flexgrid_combined_page") or fname.startswith("grid_flexgrid_combined_page")) and fname.endswith(".png"):
+                fpath = os.path.join(root, fname)
+                try:
+                    os.remove(fpath)
+                    print(f"Deleted {fpath}")
+                    removed += 1
+                except Exception as e:
+                    print(f"Failed to delete {fpath}: {e}")
+    if removed:
+        print(f"Cleanup complete. {removed} files deleted.")
+
 if __name__ == "__main__":
     main()
+    cleanup_flexgrid_combined()
+

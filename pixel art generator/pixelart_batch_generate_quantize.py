@@ -188,6 +188,8 @@ def main():
     palette = load_palette(PALETTE_CSV)
     # --- Strict numbering ---
     num = strict_numbering()
+    batch_dir = os.path.join(EXPORT_DIR, f"{num:04d}")
+    ensure_dir(batch_dir)
     # --- Schedulers to test ---
     scheduler_classes = [
         ("DDIM", DDIMScheduler),
@@ -231,7 +233,7 @@ def main():
                 img = img.crop(((w-min_dim)//2, (h-min_dim)//2, (w+min_dim)//2, (h+min_dim)//2))
                 # Save only selected version types
                 if vtype_sel in ('native', 'all'):
-                    out_path = os.path.join(EXPORT_DIR, f"{fname_base}_{res}x_1_native.png")
+                    out_path = os.path.join(batch_dir, f"{fname_base}_{res}x_1_native.png")
                     img_up = img.resize((IMG_SIZE, IMG_SIZE), resample=Image.NEAREST)
                     img_up.save(out_path)
                     print(f"Saved {out_path}")
@@ -239,14 +241,14 @@ def main():
                     img_quant = quantize_to_palette(img, palette)
                     img_quant_64 = img_quant.resize((64, 64), resample=Image.NEAREST)
                     img_quant_up = img_quant_64.resize((IMG_SIZE, IMG_SIZE), resample=Image.NEAREST)
-                    out_path_quant = os.path.join(EXPORT_DIR, f"{fname_base}_{res}x_2_quant_palette.png")
+                    out_path_quant = os.path.join(batch_dir, f"{fname_base}_{res}x_2_quant_palette.png")
                     img_quant_up.save(out_path_quant)
                     print(f"Saved {out_path_quant}")
                 if vtype_sel in ('kmeans', 'all'):
                     img_kmeans = kmeans_quantize(img, palette, k_clusters=K_CLUSTERS)
                     img_kmeans_64 = img_kmeans.resize((64, 64), resample=Image.NEAREST)
                     img_kmeans_up = img_kmeans_64.resize((IMG_SIZE, IMG_SIZE), resample=Image.NEAREST)
-                    out_path_kmeans = os.path.join(EXPORT_DIR, f"{fname_base}_{res}x_3_kmeans_palette.png")
+                    out_path_kmeans = os.path.join(batch_dir, f"{fname_base}_{res}x_3_kmeans_palette.png")
                     img_kmeans_up.save(out_path_kmeans)
                     print(f"Saved {out_path_kmeans}")
         print(f"Updated strict numbering to {num:04d} (dummy file: LAST_EXPORT_{num:04d})")
@@ -255,7 +257,7 @@ def main():
     print("\nRunning flexible grid layout script...")
     import subprocess
     try:
-        subprocess.run(["python3", "combine_flexible_grid.py"], check=True)
+        subprocess.run(["python3", "combine_flexible_grid.py", "--export_dir", batch_dir], check=True)
     except Exception as e:
         print(f"Grid script failed: {e}")
 
