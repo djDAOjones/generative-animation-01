@@ -368,7 +368,7 @@ def combined_grid(records, scheds, vtypes, ress, seeds, export_dir, out_prefix, 
 def main():
     args = parse_args()
     export_dir = args.export_dir
-    # If export_dir is 'exports' or not a batch folder, prompt for batch
+    # If export_dir is 'exports' or not a batch folder, DEFAULT to latest batch (no prompt)
     if os.path.basename(os.path.normpath(export_dir)) == 'exports' or not os.path.isdir(export_dir):
         # Scan for batch subfolders
         batch_folders = [f for f in os.listdir(export_dir) if os.path.isdir(os.path.join(export_dir, f)) and f.isdigit() and len(f) == 4]
@@ -376,13 +376,10 @@ def main():
         if not batch_folders:
             print("No batch folders found in exports/.")
             return
-        print(f"Available batch numbers: {', '.join(batch_folders)}")
-        default_batch = batch_folders[-1]
-        batch = input(f"Which 4-digit batch number? (blank for most recent: {default_batch}): ").strip()
-        if not batch or batch not in batch_folders:
-            batch = default_batch
+        # Default to latest batch (highest number)
+        batch = batch_folders[-1]
         export_dir = os.path.join(export_dir, batch)
-        print(f"Using batch folder: {export_dir}")
+        print(f"[AUTO] Using latest batch folder: {export_dir}")
     # Now collect outputs from the batch folder
     records = collect_outputs(export_dir)
     if not records:

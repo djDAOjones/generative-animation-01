@@ -24,8 +24,8 @@ from sklearn.cluster import KMeans
 DEFAULT_SEEDS = [0, 13, 20100731, 42, 123456]
 LETTERS = ['A', 'B', 'C', 'D', 'E']
 PALETTE_CSV = os.path.join(os.path.dirname(__file__), "Thread Maps Lookup.csv")
-EXPORT_DIR = "exports"
-LORA_PATH = "pixel-art-xl.safetensors"
+EXPORT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "exports"))
+LORA_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "pixel-art-xl.safetensors"))
 MODEL_ID = "stabilityai/stable-diffusion-xl-base-1.0"
 IMG_SIZE = 1024
 TARGET_SIZE = (64, 64)
@@ -106,7 +106,8 @@ def main():
     print(f"Short description for filenames: {desc}")
     # Number of versions
     try:
-        n_versions = int(input("Number of versions (1-10): ").strip())
+        n_versions_input = input("Number of versions (1-10, default 3): ").strip()
+        n_versions = int(n_versions_input) if n_versions_input else 3
         if not (1 <= n_versions <= 10):
             print("Number must be between 1 and 10.")
             return
@@ -119,14 +120,14 @@ def main():
     for i, vt in enumerate(version_types, 1):
         print(f"  {i}. {vt}")
     print("  4. all")
-    vtype_input = input("Which version types? (number or name, default all): ").strip().lower() or '4'
-    if vtype_input in ['4', 'all', '']:
+    vtype_input = input("Which version types? (number or name, default 3 for kmeans): ").strip().lower() or '3'
+    if vtype_input in ['4', 'all']:
         vtype_sel = 'all'
     elif vtype_input in ['1', 'native']:
         vtype_sel = 'native'
     elif vtype_input in ['2', 'quant']:
         vtype_sel = 'quant'
-    elif vtype_input in ['3', 'kmeans']:
+    elif vtype_input in ['3', 'kmeans', '']:
         vtype_sel = 'kmeans'
     else:
         print("Invalid version type.")
@@ -165,13 +166,15 @@ def main():
     for i, name in enumerate(sched_names, 1):
         print(f"  {i}. {name}")
     print(f"  {len(sched_names)+1}. all")
-    sched_input = input(f"Which scheduler? (number, name, or 'all', default all): ").strip().lower() or str(len(sched_names)+1)
-    if sched_input in [str(len(sched_names)+1), 'all', '']:
+    sched_input = input(f"Which scheduler? (number, name, or 'all', default 6 for DDPM): ").strip().lower() or '6'
+    if sched_input in [str(len(sched_names)+1), 'all']:
         sched_sel = sched_names
     elif sched_input.isdigit() and 1 <= int(sched_input) <= len(sched_names):
         sched_sel = [sched_names[int(sched_input)-1]]
     elif sched_input in sched_names:
         sched_sel = [sched_input]
+    elif sched_input == '':
+        sched_sel = [sched_names[5]]  # 6th scheduler is DDPM (index 5)
     else:
         print("Invalid scheduler selection.")
         return
@@ -214,7 +217,13 @@ def main():
             torch_dtype=torch.float16,
             use_safetensors=True,
         )
-        pipe.load_lora_weights(LORA_PATH)
+        # Robustly handle local vs remote LoRA weights
+        if os.path.isfile(LORA_PATH):
+            pipe.load_lora_weights(LORA_PATH)
+        else:
+            # fallback: treat as Hugging Face repo ID
+            print(f"[ERROR] LoRA weights file not found at {LORA_PATH}. Please ensure the file exists.")
+            return
         pipe.fuse_lora()
         pipe.scheduler = sched_class.from_config(pipe.scheduler.config)
         pipe.to("mps")
@@ -256,8 +265,9 @@ def main():
     # After all generation, run the flexible grid script
     print("\nRunning flexible grid layout script...")
     import subprocess
+    combine_grid_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "combine_flexible_grid.py"))
     try:
-        subprocess.run(["python3", "combine_flexible_grid.py", "--export_dir", batch_dir], check=True)
+        subprocess.run(["python3", combine_grid_script, "--export_dir", batch_dir], check=True)
     except Exception as e:
         print(f"Grid script failed: {e}")
 
