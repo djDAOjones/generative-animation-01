@@ -214,8 +214,33 @@ def grid_for(records, scheds, vtypes, ress, seeds, export_dir, out_prefix, batch
         nrows = len(row_vals)
         grid_w = ncols * (CELL_SIZE + 2*TILE_MARGIN) + (ncols+1)*SPACING
         grid_h = LABEL_HEIGHT + nrows * (CELL_SIZE + 2*TILE_MARGIN + METADATA_HEIGHT) + (nrows+1)*SPACING
+        # Title settings (match combined_grid)
+        TITLE_FONT_SIZE = 48
+        TITLE_MARGIN = 40
+        title_font = ImageFont.truetype(FONT_PATH, TITLE_FONT_SIZE)
+        # Create canvas with space for title
         canvas = Image.new("RGBA", (grid_w, grid_h), (255,255,255,255))
         draw = ImageDraw.Draw(canvas)
+        # Draw grid title/header at top center
+        # Try to recover prompt if missing
+        title_prompt = prompt
+        if not title_prompt:
+            # Try to parse from a representative record
+            for r in filtered_records:
+                if 'prompt_short' in r:
+                    title_prompt = r['prompt_short']
+                    break
+                elif 'prompt' in r:
+                    title_prompt = r['prompt']
+                    break
+            if not title_prompt and filtered_records:
+                fname = filtered_records[0]['fname']
+                parts = fname.split('_')
+                if len(parts) > 2:
+                    title_prompt = parts[2]
+        title = f"Batch: {batch or ''} | Prompt: {title_prompt or ''}"
+        title_y = TITLE_MARGIN + TITLE_FONT_SIZE//2
+        draw.text((grid_w//2, title_y), title, font=title_font, fill=(0,0,0,255), anchor="mm")
         # Draw images and metadata
         for row, row_val in enumerate(row_vals):
             for col, col_val in enumerate(col_vals):
@@ -328,8 +353,23 @@ def combined_grid(records, scheds, vtypes, ress, seeds, export_dir, out_prefix, 
         grid_h = TITLE_MARGIN + TITLE_FONT_SIZE + TITLE_MARGIN + nrows * (CELL_SIZE + 2*TILE_MARGIN + METADATA_HEIGHT) + (nrows+1)*SPACING + TITLE_MARGIN
         canvas = Image.new("RGBA", (grid_w, grid_h), (255,255,255,255))
         draw = ImageDraw.Draw(canvas)
-        # Draw page title (batch + prompt) at top center with 40px margin all around
-        title = f"Batch: {batch or ''} | Prompt: {prompt or ''}"
+        # Try to recover prompt if missing
+        title_prompt = prompt
+        if not title_prompt:
+            # Try to parse from a representative record
+            for r in records:
+                if 'prompt_short' in r:
+                    title_prompt = r['prompt_short']
+                    break
+                elif 'prompt' in r:
+                    title_prompt = r['prompt']
+                    break
+            if not title_prompt and records:
+                fname = records[0]['fname']
+                parts = fname.split('_')
+                if len(parts) > 2:
+                    title_prompt = parts[2]
+        title = f"Batch: {batch or ''} | Prompt: {title_prompt or ''}"
         title_y = TITLE_MARGIN + TITLE_FONT_SIZE//2
         draw.text((grid_w//2, title_y), title, font=title_font, fill=(0,0,0,255), anchor="mm")
         # Draw images and metadata
